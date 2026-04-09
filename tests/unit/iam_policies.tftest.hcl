@@ -14,6 +14,16 @@ mock_provider "aws" {
       arn = "arn:aws:iam::123456789012:instance-profile/mock-instance-profile"
     }
   }
+  mock_data "aws_region" {
+    defaults = {
+      region = "us-east-1"
+    }
+  }
+  mock_data "aws_caller_identity" {
+    defaults = {
+      account_id = "123456789012"
+    }
+  }
 }
 
 variables {
@@ -86,19 +96,20 @@ run "node_lifecycle_policy_naming" {
   }
 }
 
-run "node_lifecycle_scopes_provisioning_to_cluster_discovery_tag" {
+run "node_lifecycle_provisioning_requires_region_condition" {
   command = apply
 
   assert {
     condition = anytrue([
       for s in jsondecode(aws_iam_policy.node_lifecycle.policy).Statement :
-      can(s.Condition.StringEquals["aws:RequestTag/karpenter.sh/discovery"])
+      try(s.Sid == "AllowScopedEC2InstanceActionsWithTags" &&
+        s.Condition.StringEquals["aws:RequestedRegion"] == "us-east-1", false)
     ])
-    error_message = "Node lifecycle policy must scope provisioning actions to the karpenter.sh/discovery tag"
+    error_message = "Provisioning actions must be gated by aws:RequestedRegion to prevent cross-region operations"
   }
 }
 
-run "node_lifecycle_discovery_tag_value_equals_cluster_name" {
+run "node_lifecycle_scopes_provisioning_to_cluster_discovery_tag" {
   command = apply
 
   assert {
@@ -106,19 +117,46 @@ run "node_lifecycle_discovery_tag_value_equals_cluster_name" {
       for s in jsondecode(aws_iam_policy.node_lifecycle.policy).Statement :
       try(s.Condition.StringEquals["aws:RequestTag/karpenter.sh/discovery"] == "test-cluster", false)
     ])
-    error_message = "The karpenter.sh/discovery tag condition value must equal the cluster name"
+    error_message = "Provisioning actions must require the karpenter.sh/discovery tag equal to the cluster name"
   }
 }
 
-run "node_lifecycle_scopes_termination_to_resource_tag" {
+run "node_lifecycle_scopes_termination_to_resource_tag_and_region" {
   command = apply
 
   assert {
     condition = anytrue([
       for s in jsondecode(aws_iam_policy.node_lifecycle.policy).Statement :
-      can(s.Condition.StringEquals["ec2:ResourceTag/karpenter.sh/discovery"])
+      try(s.Sid == "AllowScopedDeletion" &&
+        s.Condition.StringEquals["ec2:ResourceTag/karpenter.sh/discovery"] == "test-cluster" &&
+        s.Condition.StringEquals["aws:RequestedRegion"] == "us-east-1", false)
     ])
-    error_message = "Termination actions must use ec2:ResourceTag (scoped to existing resource), not aws:RequestTag"
+    error_message = "Termination must require both the cluster ResourceTag and aws:RequestedRegion"
+  }
+}
+
+run "node_lifecycle_network_resources_require_cluster_tag" {
+  command = apply
+
+  assert {
+    condition = anytrue([
+      for s in jsondecode(aws_iam_policy.node_lifecycle.policy).Statement :
+      try(s.Sid == "AllowRunInstancesOnClusterTaggedNetworkResources" &&
+        s.Condition.StringEquals["ec2:ResourceTag/karpenter.sh/discovery"] == "test-cluster", false)
+    ])
+    error_message = "Subnets and security groups must require the karpenter.sh/discovery ResourceTag to prevent cross-cluster network access"
+  }
+}
+
+run "node_lifecycle_resources_pinned_to_account_and_region" {
+  command = apply
+
+  assert {
+    condition = alltrue([
+      for r in jsondecode(aws_iam_policy.node_lifecycle.policy).Statement[0].Resource :
+      can(regex("arn:aws:ec2:us-east-1:123456789012:", r))
+    ])
+    error_message = "Provisioning resource ARNs must be pinned to the specific account and region, not wildcarded"
   }
 }
 
@@ -152,5 +190,33 @@ run "interruption_policy_scoped_to_queue_arn" {
       contains(tolist(s.Resource), "arn:aws:sqs:us-east-1:123456789012:test-cluster-karpenter-interruption")
     ])
     error_message = "Interruption policy must be scoped to the specific queue ARN, not a wildcard"
+  }
+}
+
+run "resource_discovery_eks_pinned_to_account_and_region" {
+  command = apply
+
+  assert {
+    condition = anytrue([
+      for s in jsondecode(aws_iam_policy.resource_discovery.policy).Statement :
+      try(s.Sid == "AllowEKSClusterAccess" &&
+        contains(tolist(s.Resource),
+          "arn:aws:eks:us-east-1:123456789012:cluster/test-cluster"
+        ), false)
+    ])
+    error_message = "EKS DescribeCluster must be pinned to the specific account, region, and cluster — not wildcarded"
+  }
+}
+
+run "resource_discovery_ec2_describe_has_region_condition" {
+  command = apply
+
+  assert {
+    condition = anytrue([
+      for s in jsondecode(aws_iam_policy.resource_discovery.policy).Statement :
+      try(s.Sid == "AllowEC2ResourceDiscovery" &&
+        s.Condition.StringEquals["aws:RequestedRegion"] == "us-east-1", false)
+    ])
+    error_message = "EC2 Describe actions must include aws:RequestedRegion to prevent cross-region enumeration"
   }
 }

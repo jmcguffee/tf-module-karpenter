@@ -6,6 +6,8 @@ resource "aws_iam_policy" "resource_discovery" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      # EC2 Describe actions cannot be scoped by resource tag (AWS limitation).
+      # Region condition prevents enumeration of other regions.
       {
         Sid    = "AllowEC2ResourceDiscovery"
         Effect = "Allow"
@@ -21,22 +23,38 @@ resource "aws_iam_policy" "resource_discovery" {
           "ec2:DescribeSubnets",
         ]
         Resource = ["*"]
+        Condition = {
+          StringEquals = {
+            "aws:RequestedRegion" = data.aws_region.current.region
+          }
+        }
       },
+
+      # Pinned to the exact account, region, and cluster name — not just cluster name.
+      # Prevents describing a same-named cluster in another account or region.
       {
-        Sid      = "AllowEKSClusterAccess"
-        Effect   = "Allow"
-        Action   = ["eks:DescribeCluster"]
-        Resource = ["arn:aws:eks:*:*:cluster/${var.cluster_name}"]
+        Sid    = "AllowEKSClusterAccess"
+        Effect = "Allow"
+        Action = ["eks:DescribeCluster"]
+        Resource = [
+          "arn:aws:eks:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:cluster/${var.cluster_name}",
+        ]
       },
+
+      # AWS-managed parameters — no account in ARN by design (these live under ::).
+      # Paths are already tightly scoped to known EKS/Bottlerocket AMI parameter namespaces.
       {
         Sid    = "AllowSSMParameterAccess"
         Effect = "Allow"
         Action = ["ssm:GetParameter"]
         Resource = [
-          "arn:aws:ssm:*::parameter/aws/service/bottlerocket/*",
-          "arn:aws:ssm:*::parameter/aws/service/eks/optimized-ami/*",
+          "arn:aws:ssm:${data.aws_region.current.region}::parameter/aws/service/bottlerocket/*",
+          "arn:aws:ssm:${data.aws_region.current.region}::parameter/aws/service/eks/optimized-ami/*",
         ]
       },
+
+      # Pricing uses a global endpoint — aws:RequestedRegion does not apply.
+      # Read-only and does not expose cluster-specific data.
       {
         Sid      = "AllowPricingAccess"
         Effect   = "Allow"

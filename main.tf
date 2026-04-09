@@ -8,6 +8,9 @@ terraform {
   }
 }
 
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
 locals {
   oidc_provider_url = replace(var.oidc_provider_url, "https://", "")
 }

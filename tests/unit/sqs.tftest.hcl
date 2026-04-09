@@ -14,6 +14,16 @@ mock_provider "aws" {
       arn = "arn:aws:iam::123456789012:instance-profile/mock-instance-profile"
     }
   }
+  mock_data "aws_region" {
+    defaults = {
+      region = "us-east-1"
+    }
+  }
+  mock_data "aws_caller_identity" {
+    defaults = {
+      account_id = "123456789012"
+    }
+  }
 }
 
 variables {
