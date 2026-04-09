@@ -1,4 +1,20 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  mock_resource "aws_iam_policy" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:policy/mock-policy"
+    }
+  }
+  mock_resource "aws_iam_role" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:role/mock-role"
+    }
+  }
+  mock_resource "aws_iam_instance_profile" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:instance-profile/mock-instance-profile"
+    }
+  }
+}
 
 variables {
   cluster_name           = "test-cluster"
@@ -9,7 +25,7 @@ variables {
 }
 
 run "controller_role_naming_convention" {
-  command = plan
+  command = apply
 
   assert {
     condition     = aws_iam_role.karpenter_controller.name == "test-cluster-karpenter-controller"
@@ -18,7 +34,7 @@ run "controller_role_naming_convention" {
 }
 
 run "controller_trust_policy_is_valid_json" {
-  command = plan
+  command = apply
 
   assert {
     condition     = can(jsondecode(aws_iam_role.karpenter_controller.assume_role_policy))
@@ -27,7 +43,7 @@ run "controller_trust_policy_is_valid_json" {
 }
 
 run "controller_trust_policy_scoped_to_service_account" {
-  command = plan
+  command = apply
 
   variables {
     namespace            = "karpenter"
@@ -44,7 +60,7 @@ run "controller_trust_policy_scoped_to_service_account" {
 }
 
 run "node_role_naming_convention" {
-  command = plan
+  command = apply
 
   assert {
     condition     = aws_iam_role.karpenter_node.name == "test-cluster-karpenter-node"
@@ -53,7 +69,7 @@ run "node_role_naming_convention" {
 }
 
 run "instance_profile_matches_node_role_name" {
-  command = plan
+  command = apply
 
   assert {
     condition     = aws_iam_instance_profile.karpenter_node.name == "test-cluster-karpenter-node"
@@ -62,7 +78,7 @@ run "instance_profile_matches_node_role_name" {
 }
 
 run "node_lifecycle_policy_naming" {
-  command = plan
+  command = apply
 
   assert {
     condition     = aws_iam_policy.node_lifecycle.name == "test-cluster-karpenter-node-lifecycle"
@@ -71,31 +87,43 @@ run "node_lifecycle_policy_naming" {
 }
 
 run "node_lifecycle_scopes_provisioning_to_cluster_discovery_tag" {
-  command = plan
+  command = apply
 
   assert {
     condition = anytrue([
-      for s in jsondecode(data.aws_iam_policy_document.node_lifecycle.json).Statement :
+      for s in jsondecode(aws_iam_policy.node_lifecycle.policy).Statement :
       can(s.Condition.StringEquals["aws:RequestTag/karpenter.sh/discovery"])
     ])
-    error_message = "Node lifecycle policy must scope provisioning actions to karpenter.sh/discovery tag"
+    error_message = "Node lifecycle policy must scope provisioning actions to the karpenter.sh/discovery tag"
+  }
+}
+
+run "node_lifecycle_discovery_tag_value_equals_cluster_name" {
+  command = apply
+
+  assert {
+    condition = anytrue([
+      for s in jsondecode(aws_iam_policy.node_lifecycle.policy).Statement :
+      try(s.Condition.StringEquals["aws:RequestTag/karpenter.sh/discovery"] == "test-cluster", false)
+    ])
+    error_message = "The karpenter.sh/discovery tag condition value must equal the cluster name"
   }
 }
 
 run "node_lifecycle_scopes_termination_to_resource_tag" {
-  command = plan
+  command = apply
 
   assert {
     condition = anytrue([
-      for s in jsondecode(data.aws_iam_policy_document.node_lifecycle.json).Statement :
+      for s in jsondecode(aws_iam_policy.node_lifecycle.policy).Statement :
       can(s.Condition.StringEquals["ec2:ResourceTag/karpenter.sh/discovery"])
     ])
-    error_message = "Termination actions must use ec2:ResourceTag (existing resource), not aws:RequestTag"
+    error_message = "Termination actions must use ec2:ResourceTag (scoped to existing resource), not aws:RequestTag"
   }
 }
 
 run "passrole_policy_naming" {
-  command = plan
+  command = apply
 
   assert {
     condition     = aws_iam_policy.passrole.name == "test-cluster-karpenter-passrole"
@@ -104,25 +132,25 @@ run "passrole_policy_naming" {
 }
 
 run "passrole_conditioned_on_ec2_service" {
-  command = plan
+  command = apply
 
   assert {
     condition = anytrue([
-      for s in jsondecode(data.aws_iam_policy_document.passrole.json).Statement :
-      try(contains(s.Condition.StringEquals["iam:PassedToService"], "ec2.amazonaws.com"), false)
+      for s in jsondecode(aws_iam_policy.passrole.policy).Statement :
+      try(contains(tolist(s.Condition.StringEquals["iam:PassedToService"]), "ec2.amazonaws.com"), false)
     ])
     error_message = "PassRole must be conditioned on iam:PassedToService = ec2.amazonaws.com"
   }
 }
 
 run "interruption_policy_scoped_to_queue_arn" {
-  command = plan
+  command = apply
 
   assert {
     condition = anytrue([
-      for s in jsondecode(data.aws_iam_policy_document.interruption.json).Statement :
+      for s in jsondecode(aws_iam_policy.interruption.policy).Statement :
       contains(tolist(s.Resource), "arn:aws:sqs:us-east-1:123456789012:test-cluster-karpenter-interruption")
     ])
-    error_message = "Interruption policy must be scoped to the specific queue ARN, not wildcard"
+    error_message = "Interruption policy must be scoped to the specific queue ARN, not a wildcard"
   }
 }

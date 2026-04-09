@@ -1,4 +1,20 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  mock_resource "aws_iam_policy" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:policy/mock-policy"
+    }
+  }
+  mock_resource "aws_iam_role" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:role/mock-role"
+    }
+  }
+  mock_resource "aws_iam_instance_profile" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:instance-profile/mock-instance-profile"
+    }
+  }
+}
 
 variables {
   cluster_name           = "test-cluster"
@@ -30,7 +46,7 @@ run "default_tags_are_empty" {
   command = plan
 
   assert {
-    condition     = var.tags == {}
+    condition     = length(var.tags) == 0
     error_message = "Default tags must be an empty map"
   }
 }
@@ -73,6 +89,6 @@ run "tags_are_passed_through" {
 
   assert {
     condition     = var.tags["Environment"] == "production"
-    error_message = "Tags must be passed through to resources"
+    error_message = "Tags must pass through to resources"
   }
 }

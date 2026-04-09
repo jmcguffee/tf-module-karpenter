@@ -1,4 +1,20 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  mock_resource "aws_iam_policy" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:policy/mock-policy"
+    }
+  }
+  mock_resource "aws_iam_role" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:role/mock-role"
+    }
+  }
+  mock_resource "aws_iam_instance_profile" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:instance-profile/mock-instance-profile"
+    }
+  }
+}
 
 variables {
   cluster_name           = "test-cluster"
@@ -9,13 +25,13 @@ variables {
 }
 
 run "interruption_policy_allows_required_sqs_actions" {
-  command = plan
+  command = apply
 
   assert {
     condition = alltrue([
       for action in ["sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:GetQueueUrl", "sqs:ReceiveMessage"] :
       anytrue([
-        for s in jsondecode(data.aws_iam_policy_document.interruption.json).Statement :
+        for s in jsondecode(aws_iam_policy.interruption.policy).Statement :
         contains(tolist(s.Action), action)
       ])
     ])
@@ -24,11 +40,11 @@ run "interruption_policy_allows_required_sqs_actions" {
 }
 
 run "interruption_policy_does_not_allow_send_message" {
-  command = plan
+  command = apply
 
   assert {
     condition = alltrue([
-      for s in jsondecode(data.aws_iam_policy_document.interruption.json).Statement :
+      for s in jsondecode(aws_iam_policy.interruption.policy).Statement :
       !contains(tolist(s.Action), "sqs:SendMessage")
     ])
     error_message = "Interruption policy must not grant sqs:SendMessage — the controller only reads from the queue"
@@ -36,7 +52,7 @@ run "interruption_policy_does_not_allow_send_message" {
 }
 
 run "interruption_policy_naming_convention" {
-  command = plan
+  command = apply
 
   assert {
     condition     = aws_iam_policy.interruption.name == "test-cluster-karpenter-interruption"
@@ -45,11 +61,11 @@ run "interruption_policy_naming_convention" {
 }
 
 run "interruption_queue_arn_is_used_as_resource" {
-  command = plan
+  command = apply
 
   assert {
     condition = anytrue([
-      for s in jsondecode(data.aws_iam_policy_document.interruption.json).Statement :
+      for s in jsondecode(aws_iam_policy.interruption.policy).Statement :
       contains(tolist(s.Resource), var.interruption_queue_arn)
     ])
     error_message = "Interruption policy resource must exactly match the provided queue ARN"
@@ -57,7 +73,7 @@ run "interruption_queue_arn_is_used_as_resource" {
 }
 
 run "different_queue_arn_is_respected" {
-  command = plan
+  command = apply
 
   variables {
     interruption_queue_arn = "arn:aws:sqs:eu-west-1:999999999999:prod-cluster-karpenter"
@@ -65,7 +81,7 @@ run "different_queue_arn_is_respected" {
 
   assert {
     condition = anytrue([
-      for s in jsondecode(data.aws_iam_policy_document.interruption.json).Statement :
+      for s in jsondecode(aws_iam_policy.interruption.policy).Statement :
       contains(tolist(s.Resource), "arn:aws:sqs:eu-west-1:999999999999:prod-cluster-karpenter")
     ])
     error_message = "Interruption policy must use the caller-provided queue ARN, not a hardcoded value"
