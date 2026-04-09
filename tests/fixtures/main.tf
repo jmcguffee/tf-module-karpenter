@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.7.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -19,10 +19,7 @@ module "karpenter" {
   namespace            = "karpenter"
   service_account_name = "karpenter"
 
-  enable_interruption_handling    = true
-  enable_kms                      = true
-  kms_key_deletion_window_in_days = 7
-  queue_message_retention_seconds = 300
+  interruption_queue_arn = "arn:aws:sqs:us-east-1:123456789012:fixture-test-cluster-karpenter-interruption"
 
   tags = {
     Environment = "test"
@@ -39,6 +36,6 @@ output "node_role_arn" {
   value = module.karpenter.node_role_arn
 }
 
-output "queue_url" {
-  value = module.karpenter.queue_url
+output "node_instance_profile_name" {
+  value = module.karpenter.node_instance_profile_name
 }

@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.7.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -12,10 +12,9 @@ locals {
   oidc_provider_url = replace(var.oidc_provider_url, "https://", "")
 }
 
-# Karpenter Controller IAM Role (IRSA)
 resource "aws_iam_role" "karpenter_controller" {
   name        = "${var.cluster_name}-karpenter-controller"
-  description = "IAM role for Karpenter controller running in ${var.cluster_name}"
+  description = "IAM role for Karpenter controller in ${var.cluster_name}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -39,7 +38,6 @@ resource "aws_iam_role" "karpenter_controller" {
   tags = var.tags
 }
 
-# Karpenter Node IAM Role
 resource "aws_iam_role" "karpenter_node" {
   name        = "${var.cluster_name}-karpenter-node"
   description = "IAM role for nodes launched by Karpenter in ${var.cluster_name}"

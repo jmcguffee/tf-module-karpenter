@@ -27,7 +27,7 @@ data "aws_iam_policy_document" "passrole" {
 
 resource "aws_iam_policy" "passrole" {
   name        = "${var.cluster_name}-karpenter-passrole"
-  description = "Karpenter PassRole policy for node IAM role in ${var.cluster_name}"
+  description = "Karpenter PassRole policy scoped to node IAM role in ${var.cluster_name}"
   policy      = data.aws_iam_policy_document.passrole.json
   tags        = var.tags
 }

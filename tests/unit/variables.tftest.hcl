@@ -1,89 +1,78 @@
+mock_provider "aws" {}
+
 variables {
-  cluster_name      = "test-cluster"
-  cluster_endpoint  = "https://test.eks.amazonaws.com"
-  oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
-  oidc_provider_url = "https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
+  cluster_name           = "test-cluster"
+  cluster_endpoint       = "https://test.eks.amazonaws.com"
+  oidc_provider_arn      = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
+  oidc_provider_url      = "https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
+  interruption_queue_arn = "arn:aws:sqs:us-east-1:123456789012:test-cluster-karpenter-interruption"
 }
 
-run "valid_kms_deletion_window_minimum" {
-  command = plan
-
-  variables {
-    kms_key_deletion_window_in_days = 7
-  }
-
-  assert {
-    condition     = var.kms_key_deletion_window_in_days == 7
-    error_message = "KMS deletion window should accept 7 days (minimum)"
-  }
-}
-
-run "valid_kms_deletion_window_maximum" {
-  command = plan
-
-  variables {
-    kms_key_deletion_window_in_days = 30
-  }
-
-  assert {
-    condition     = var.kms_key_deletion_window_in_days == 30
-    error_message = "KMS deletion window should accept 30 days (maximum)"
-  }
-}
-
-run "invalid_kms_deletion_window_too_short" {
-  command = plan
-
-  variables {
-    kms_key_deletion_window_in_days = 5
-  }
-
-  expect_failures = [
-    var.kms_key_deletion_window_in_days,
-  ]
-}
-
-run "invalid_kms_deletion_window_too_long" {
-  command = plan
-
-  variables {
-    kms_key_deletion_window_in_days = 31
-  }
-
-  expect_failures = [
-    var.kms_key_deletion_window_in_days,
-  ]
-}
-
-run "valid_queue_retention_default" {
+run "default_namespace_is_karpenter" {
   command = plan
 
   assert {
-    condition     = var.queue_message_retention_seconds == 300
-    error_message = "Default queue retention should be 300 seconds"
+    condition     = var.namespace == "karpenter"
+    error_message = "Default namespace must be karpenter"
   }
 }
 
-run "invalid_queue_retention_too_short" {
+run "default_service_account_is_karpenter" {
   command = plan
 
-  variables {
-    queue_message_retention_seconds = 30
+  assert {
+    condition     = var.service_account_name == "karpenter"
+    error_message = "Default service account name must be karpenter"
   }
-
-  expect_failures = [
-    var.queue_message_retention_seconds,
-  ]
 }
 
-run "invalid_queue_retention_too_long" {
+run "default_tags_are_empty" {
+  command = plan
+
+  assert {
+    condition     = var.tags == {}
+    error_message = "Default tags must be an empty map"
+  }
+}
+
+run "custom_namespace_accepted" {
   command = plan
 
   variables {
-    queue_message_retention_seconds = 1209601
+    namespace = "karpenter-system"
   }
 
-  expect_failures = [
-    var.queue_message_retention_seconds,
-  ]
+  assert {
+    condition     = var.namespace == "karpenter-system"
+    error_message = "Custom namespace must be accepted"
+  }
+}
+
+run "custom_service_account_accepted" {
+  command = plan
+
+  variables {
+    service_account_name = "karpenter-sa"
+  }
+
+  assert {
+    condition     = var.service_account_name == "karpenter-sa"
+    error_message = "Custom service account name must be accepted"
+  }
+}
+
+run "tags_are_passed_through" {
+  command = plan
+
+  variables {
+    tags = {
+      Environment = "production"
+      ManagedBy   = "terraform"
+    }
+  }
+
+  assert {
+    condition     = var.tags["Environment"] == "production"
+    error_message = "Tags must be passed through to resources"
+  }
 }

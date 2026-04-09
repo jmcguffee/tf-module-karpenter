@@ -1,115 +1,73 @@
+mock_provider "aws" {}
+
 variables {
-  cluster_name      = "test-cluster"
-  cluster_endpoint  = "https://test.eks.amazonaws.com"
-  oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
-  oidc_provider_url = "https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
+  cluster_name           = "test-cluster"
+  cluster_endpoint       = "https://test.eks.amazonaws.com"
+  oidc_provider_arn      = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
+  oidc_provider_url      = "https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
+  interruption_queue_arn = "arn:aws:sqs:us-east-1:123456789012:test-cluster-karpenter-interruption"
 }
 
-run "sqs_queue_created_by_default" {
+run "interruption_policy_allows_required_sqs_actions" {
   command = plan
 
   assert {
-    condition     = length(aws_sqs_queue.karpenter_interruption) == 1
-    error_message = "SQS queue must be created when interruption handling is enabled (default)"
-  }
-
-  assert {
-    condition     = aws_sqs_queue.karpenter_interruption[0].name == "test-cluster-karpenter-interruption"
-    error_message = "SQS queue name must follow the <cluster_name>-karpenter-interruption convention"
-  }
-}
-
-run "sqs_queue_not_created_when_disabled" {
-  command = plan
-
-  variables {
-    enable_interruption_handling = false
-  }
-
-  assert {
-    condition     = length(aws_sqs_queue.karpenter_interruption) == 0
-    error_message = "SQS queue must not be created when interruption handling is disabled"
+    condition = alltrue([
+      for action in ["sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:GetQueueUrl", "sqs:ReceiveMessage"] :
+      anytrue([
+        for s in jsondecode(data.aws_iam_policy_document.interruption.json).Statement :
+        contains(tolist(s.Action), action)
+      ])
+    ])
+    error_message = "Interruption policy must allow all four required SQS actions"
   }
 }
 
-run "sqs_queue_retention_respected" {
-  command = plan
-
-  variables {
-    queue_message_retention_seconds = 600
-  }
-
-  assert {
-    condition     = aws_sqs_queue.karpenter_interruption[0].message_retention_seconds == 600
-    error_message = "SQS queue message retention must match the variable value"
-  }
-}
-
-run "sqs_kms_encryption_enabled_by_default" {
+run "interruption_policy_does_not_allow_send_message" {
   command = plan
 
   assert {
-    condition     = length(aws_kms_key.karpenter) == 1
-    error_message = "KMS key must be created when enable_kms is true (default)"
-  }
-
-  assert {
-    condition     = aws_kms_key.karpenter[0].enable_key_rotation == true
-    error_message = "KMS key rotation must be enabled"
+    condition = alltrue([
+      for s in jsondecode(data.aws_iam_policy_document.interruption.json).Statement :
+      !contains(tolist(s.Action), "sqs:SendMessage")
+    ])
+    error_message = "Interruption policy must not grant sqs:SendMessage — the controller only reads from the queue"
   }
 }
 
-run "sqs_kms_not_created_when_disabled" {
+run "interruption_policy_naming_convention" {
+  command = plan
+
+  assert {
+    condition     = aws_iam_policy.interruption.name == "test-cluster-karpenter-interruption"
+    error_message = "Interruption policy name must follow the <cluster_name>-karpenter-interruption convention"
+  }
+}
+
+run "interruption_queue_arn_is_used_as_resource" {
+  command = plan
+
+  assert {
+    condition = anytrue([
+      for s in jsondecode(data.aws_iam_policy_document.interruption.json).Statement :
+      contains(tolist(s.Resource), var.interruption_queue_arn)
+    ])
+    error_message = "Interruption policy resource must exactly match the provided queue ARN"
+  }
+}
+
+run "different_queue_arn_is_respected" {
   command = plan
 
   variables {
-    enable_kms = false
+    interruption_queue_arn = "arn:aws:sqs:eu-west-1:999999999999:prod-cluster-karpenter"
   }
 
   assert {
-    condition     = length(aws_kms_key.karpenter) == 0
-    error_message = "KMS key must not be created when enable_kms is false"
-  }
-}
-
-run "sqs_eventbridge_rules_created_by_default" {
-  command = plan
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.spot_interruption) == 1
-    error_message = "Spot interruption EventBridge rule must be created by default"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.instance_rebalance) == 1
-    error_message = "Instance rebalance EventBridge rule must be created by default"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.instance_state_change) == 1
-    error_message = "Instance state change EventBridge rule must be created by default"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.scheduled_change) == 1
-    error_message = "Scheduled change EventBridge rule must be created by default"
-  }
-}
-
-run "sqs_eventbridge_rules_not_created_when_disabled" {
-  command = plan
-
-  variables {
-    enable_interruption_handling = false
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.spot_interruption) == 0
-    error_message = "Spot interruption EventBridge rule must not be created when interruption handling is disabled"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.instance_rebalance) == 0
-    error_message = "Instance rebalance EventBridge rule must not be created when interruption handling is disabled"
+    condition = anytrue([
+      for s in jsondecode(data.aws_iam_policy_document.interruption.json).Statement :
+      contains(tolist(s.Resource), "arn:aws:sqs:eu-west-1:999999999999:prod-cluster-karpenter")
+    ])
+    error_message = "Interruption policy must use the caller-provided queue ARN, not a hardcoded value"
   }
 }
