@@ -19,8 +19,6 @@ module "karpenter" {
   namespace            = "karpenter"
   service_account_name = "karpenter"
 
-  interruption_queue_arn = "arn:aws:sqs:us-east-1:123456789012:fixture-test-cluster-karpenter-interruption"
-
   tags = {
     Environment = "test"
     ManagedBy   = "terraform"

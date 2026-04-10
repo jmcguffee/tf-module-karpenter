@@ -27,3 +27,13 @@ output "node_instance_profile_name" {
   description = "Name of the Karpenter node instance profile"
   value       = aws_iam_instance_profile.karpenter_node.name
 }
+
+output "interruption_queue_arn" {
+  description = "ARN of the Karpenter interruption SQS queue"
+  value       = aws_sqs_queue.interruption.arn
+}
+
+output "interruption_queue_url" {
+  description = "URL of the Karpenter interruption SQS queue"
+  value       = aws_sqs_queue.interruption.id
+}

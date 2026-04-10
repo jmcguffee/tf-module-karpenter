@@ -30,11 +30,6 @@ variable "service_account_name" {
   default     = "karpenter"
 }
 
-variable "interruption_queue_arn" {
-  description = "ARN of the SQS queue for Karpenter interruption handling (managed by your existing SQS module)"
-  type        = string
-}
-
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

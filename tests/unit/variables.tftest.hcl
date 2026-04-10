@@ -14,6 +14,12 @@ mock_provider "aws" {
       arn = "arn:aws:iam::123456789012:instance-profile/mock-instance-profile"
     }
   }
+  mock_resource "aws_sqs_queue" {
+    defaults = {
+      arn = "arn:aws:sqs:us-east-1:123456789012:test-cluster-karpenter"
+      id  = "https://sqs.us-east-1.amazonaws.com/123456789012/test-cluster-karpenter"
+    }
+  }
   mock_data "aws_region" {
     defaults = {
       region = "us-east-1"
@@ -29,9 +35,8 @@ mock_provider "aws" {
 variables {
   cluster_name           = "test-cluster"
   cluster_endpoint       = "https://test.eks.amazonaws.com"
-  oidc_provider_arn      = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
-  oidc_provider_url      = "https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
-  interruption_queue_arn = "arn:aws:sqs:us-east-1:123456789012:test-cluster-karpenter-interruption"
+  oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
+  oidc_provider_url = "https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
 }
 
 run "default_namespace_is_karpenter" {

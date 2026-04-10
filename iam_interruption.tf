@@ -15,7 +15,7 @@ resource "aws_iam_policy" "interruption" {
           "sqs:GetQueueUrl",
           "sqs:ReceiveMessage",
         ]
-        Resource = [var.interruption_queue_arn]
+        Resource = [aws_sqs_queue.interruption.arn]
       },
     ]
   })
